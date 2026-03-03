@@ -1,15 +1,19 @@
 import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { createOrderSchema } from '@/lib/validations';
-import { 
-  successResponse, validationError, notFound, internalError, 
-  errorResponse, rateLimited 
+import {
+  successResponse, validationError, notFound, internalError,
+  errorResponse, rateLimited
 } from '@/lib/api-response';
-import { checkRateLimit } from '@/lib/middleware-helpers';
+import { checkRateLimit, requireAuth } from '@/lib/middleware-helpers';
 import { sanitizeHtml } from '@/lib/utils';
 
 export async function GET(request: NextRequest) {
   try {
+    // Only authenticated staff can list orders
+    const { error } = await requireAuth(request, ['ADMIN', 'KITCHEN']);
+    if (error) return error;
+
     const { searchParams } = new URL(request.url);
     const statuses = searchParams.getAll('status');
     const tableId = searchParams.get('tableId');
@@ -17,7 +21,7 @@ export async function GET(request: NextRequest) {
     const page = parseInt(searchParams.get('page') || '1');
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 50);
 
-    const validStatuses = ['PLACED','CONFIRMED','PREPARING','READY','COMPLETED','CANCELLED'];
+    const validStatuses = ['PLACED', 'CONFIRMED', 'PREPARING', 'READY', 'COMPLETED', 'CANCELLED'];
     for (const s of statuses) {
       if (!validStatuses.includes(s)) {
         return validationError(`Invalid status "${s}". Must be one of: ${validStatuses.join(', ')}`);
@@ -89,6 +93,16 @@ export async function POST(request: NextRequest) {
       return errorResponse('SESSION_EXPIRED', 'Session is invalid or expired', 400);
     }
 
+    // Enforce session expiry
+    if (new Date() > session.expiresAt) {
+      // Mark session as expired
+      await prisma.session.update({
+        where: { id: sessionId },
+        data: { status: 'EXPIRED', completedAt: new Date() },
+      });
+      return errorResponse('SESSION_EXPIRED', 'Session has expired. Please scan the QR code again.', 400);
+    }
+
     if (session.tableId !== tableId) {
       return validationError('Table and session do not match');
     }
@@ -136,31 +150,45 @@ export async function POST(request: NextRequest) {
     const taxAmount = Math.round((subtotal * taxPercent) / 100 * 100) / 100;
     const totalAmount = subtotal + taxAmount;
 
-    // Create order with items in a transaction
-    const order = await prisma.order.create({
-      data: {
-        sessionId,
-        tableId,
-        idempotencyKey,
-        specialNotes: specialNotes ? sanitizeHtml(specialNotes) : null,
-        subtotal,
-        taxAmount,
-        totalAmount,
-        items: {
-          create: orderItems,
-        },
-        statusLogs: {
-          create: {
-            toStatus: 'PLACED',
-            note: 'Order placed by customer',
+    // Create order with items in a transaction (also handles idempotency atomically)
+    const order = await prisma.$transaction(async (tx) => {
+      // Re-check idempotency inside the transaction to prevent race condition
+      const duplicate = await tx.order.findUnique({
+        where: { idempotencyKey },
+      });
+      if (duplicate) {
+        return null; // Signal duplicate
+      }
+
+      return tx.order.create({
+        data: {
+          sessionId,
+          tableId,
+          idempotencyKey,
+          specialNotes: specialNotes ? sanitizeHtml(specialNotes) : null,
+          subtotal,
+          taxAmount,
+          totalAmount,
+          items: {
+            create: orderItems,
+          },
+          statusLogs: {
+            create: {
+              toStatus: 'PLACED',
+              note: 'Order placed by customer',
+            },
           },
         },
-      },
-      include: {
-        items: true,
-        table: { select: { number: true } },
-      },
+        include: {
+          items: true,
+          table: { select: { number: true } },
+        },
+      });
     });
+
+    if (!order) {
+      return errorResponse('DUPLICATE_ORDER', 'This order has already been placed', 409);
+    }
 
     return successResponse(order, 201);
   } catch (error) {

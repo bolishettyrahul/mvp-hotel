@@ -2,9 +2,14 @@ import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { verifyPaymentSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError, errorResponse } from '@/lib/api-response';
+import { requireAuth } from '@/lib/middleware-helpers';
 
 export async function POST(request: NextRequest) {
   try {
+    // Only authenticated staff can verify payments
+    const { error } = await requireAuth(request, ['ADMIN', 'KITCHEN']);
+    if (error) return error;
+
     const body = await request.json();
     const parsed = verifyPaymentSchema.safeParse(body);
 

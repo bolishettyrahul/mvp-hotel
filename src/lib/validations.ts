@@ -33,7 +33,7 @@ export const createSessionSchema = z.object({
 });
 
 export const updateSessionSchema = z.object({
-  status: z.enum(['ACTIVE', 'COMPLETED', 'EXPIRED', 'CANCELLED']),
+  status: z.enum(['COMPLETED', 'EXPIRED', 'CANCELLED']),
 });
 
 // ─── Category Schemas ────────────────────────────────────────────────────────

@@ -2,12 +2,23 @@ import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
 import { updateSessionSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError } from '@/lib/api-response';
+import { requireAuth, getSessionId } from '@/lib/middleware-helpers';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { sessionId: string } }
+
 ) {
   try {
+    // Allow access if the requester owns this session (cookie) or is authenticated staff
+    const requestSessionId = getSessionId(request);
+    const isOwner = requestSessionId === params.sessionId;
+
+    if (!isOwner) {
+      const { error } = await requireAuth(request, ['ADMIN', 'KITCHEN']);
+      if (error) return error;
+    }
+
     const session = await prisma.session.findUnique({
       where: { id: params.sessionId },
       include: {
@@ -38,6 +49,10 @@ export async function PATCH(
   { params }: { params: { sessionId: string } }
 ) {
   try {
+    // Only admin can update sessions (close, expire, cancel)
+    const { error } = await requireAuth(request, ['ADMIN']);
+    if (error) return error;
+
     const body = await request.json();
     const parsed = updateSessionSchema.safeParse(body);
 

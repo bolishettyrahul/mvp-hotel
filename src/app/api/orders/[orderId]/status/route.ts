@@ -3,12 +3,17 @@ import prisma from '@/lib/prisma';
 import { updateOrderStatusSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError, errorResponse } from '@/lib/api-response';
 import { ORDER_STATUS_FLOW } from '@/lib/utils';
+import { requireAuth } from '@/lib/middleware-helpers';
 
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { orderId: string } }
 ) {
   try {
+    // Only authenticated staff can update order status
+    const { error, staff } = await requireAuth(request, ['ADMIN', 'KITCHEN']);
+    if (error) return error;
+
     const body = await request.json();
     const parsed = updateOrderStatusSchema.safeParse(body);
 
@@ -17,7 +22,7 @@ export async function PATCH(
     }
 
     const { status: newStatus, note } = parsed.data;
-    const staffId = request.headers.get('x-staff-id');
+    const staffId = staff!.staffId;
 
     const order = await prisma.order.findUnique({
       where: { id: params.orderId },

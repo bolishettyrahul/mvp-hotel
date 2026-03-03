@@ -14,7 +14,7 @@ export async function getStaffFromRequest(
     if (!token) return null;
     return verifyToken(token);
   }
-  
+
   const token = authHeader.split(' ')[1];
   return verifyToken(token);
 }
@@ -24,15 +24,15 @@ export async function requireAuth(
   allowedRoles?: ('ADMIN' | 'KITCHEN')[]
 ) {
   const staff = await getStaffFromRequest(request);
-  
+
   if (!staff) {
     return { error: unauthorized(), staff: null };
   }
-  
+
   if (allowedRoles && !allowedRoles.includes(staff.role)) {
     return { error: forbidden(), staff: null };
   }
-  
+
   return { error: null, staff };
 }
 
@@ -42,13 +42,14 @@ export function getSessionId(request: NextRequest): string | null {
   // Check header first, then cookie
   const sessionId = request.headers.get('x-session-id');
   if (sessionId) return sessionId;
-  
+
   return request.cookies.get('session-id')?.value || null;
 }
 
 // ─── Rate Limiting (Simple in-memory) ──────────────────────────────────────
 
 const rateLimitMap = new Map<string, { count: number; resetAt: number }>();
+let lastCleanup = Date.now();
 
 export function checkRateLimit(
   key: string,
@@ -56,30 +57,31 @@ export function checkRateLimit(
   windowMs: number
 ): boolean {
   const now = Date.now();
+
+  // On-demand cleanup instead of setInterval (serverless-safe)
+  if (now - lastCleanup > 60000) {
+    lastCleanup = now;
+    rateLimitMap.forEach((entry, k) => {
+      if (now > entry.resetAt) {
+        rateLimitMap.delete(k);
+      }
+    });
+  }
+
   const entry = rateLimitMap.get(key);
-  
+
   if (!entry || now > entry.resetAt) {
     rateLimitMap.set(key, { count: 1, resetAt: now + windowMs });
     return true;
   }
-  
+
   if (entry.count >= maxRequests) {
     return false;
   }
-  
+
   entry.count++;
   return true;
 }
-
-// Periodically clean up expired entries
-setInterval(() => {
-  const now = Date.now();
-  rateLimitMap.forEach((entry, key) => {
-    if (now > entry.resetAt) {
-      rateLimitMap.delete(key);
-    }
-  });
-}, 60000);
 
 // ─── IP Extraction ──────────────────────────────────────────────────────────
 

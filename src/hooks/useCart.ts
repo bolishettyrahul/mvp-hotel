@@ -11,48 +11,54 @@ export interface CartItem {
   isVeg: boolean;
 }
 
-const CART_KEY = 'qr-dine-cart';
+const CART_KEY_PREFIX = 'qr-dine-cart';
 
-function getStoredCart(): CartItem[] {
+function getCartKey(tableId: string): string {
+  return `${CART_KEY_PREFIX}:${tableId}`;
+}
+
+function getStoredCart(tableId: string): CartItem[] {
   if (typeof window === 'undefined') return [];
   try {
-    const stored = localStorage.getItem(CART_KEY);
+    const stored = localStorage.getItem(getCartKey(tableId));
     return stored ? JSON.parse(stored) : [];
   } catch {
     return [];
   }
 }
 
-function setStoredCart(cart: CartItem[]) {
+function setStoredCart(tableId: string, cart: CartItem[]) {
   if (typeof window === 'undefined') return;
-  localStorage.setItem(CART_KEY, JSON.stringify(cart));
+  localStorage.setItem(getCartKey(tableId), JSON.stringify(cart));
 }
 
-export function useCart() {
+export function useCart(tableId: string) {
   const [items, setItems] = useState<CartItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
   // Load cart from localStorage
   useEffect(() => {
-    setItems(getStoredCart());
+    setItems(getStoredCart(tableId));
     setIsLoaded(true);
 
     // Listen for changes from other tabs
+    const cartKey = getCartKey(tableId);
     const handleStorage = (e: StorageEvent) => {
-      if (e.key === CART_KEY) {
+      if (e.key === cartKey) {
         setItems(e.newValue ? JSON.parse(e.newValue) : []);
       }
     };
     window.addEventListener('storage', handleStorage);
     return () => window.removeEventListener('storage', handleStorage);
-  }, []);
+  }, [tableId]);
 
   // Save to localStorage whenever items change
   useEffect(() => {
     if (isLoaded) {
-      setStoredCart(items);
+      setStoredCart(tableId, items);
     }
-  }, [items, isLoaded]);
+  }, [items, isLoaded, tableId]);
+
 
   const addItem = useCallback((item: Omit<CartItem, 'quantity'>) => {
     setItems(prev => {
@@ -77,9 +83,11 @@ export function useCart() {
       setItems(prev => prev.filter(i => i.menuItemId !== menuItemId));
       return;
     }
+    // Cap at 50 to match server validation
+    const cappedQty = Math.min(quantity, 50);
     setItems(prev =>
       prev.map(i =>
-        i.menuItemId === menuItemId ? { ...i, quantity } : i
+        i.menuItemId === menuItemId ? { ...i, quantity: cappedQty } : i
       )
     );
   }, []);

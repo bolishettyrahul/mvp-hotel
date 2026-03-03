@@ -35,11 +35,12 @@ async function main() {
   });
   console.log(`✅ Admin: ${admin.email} / admin123`);
 
-  // Create kitchen staff
+  // Create kitchen staff (PIN is bcrypt-hashed)
+  const hashedPin = await bcrypt.hash('1234', 10);
   const kitchenStaff = await prisma.staff.create({
     data: {
       name: 'Kitchen 1',
-      pin: '1234',
+      pin: hashedPin,
       role: 'KITCHEN',
     },
   });
@@ -105,16 +106,15 @@ async function main() {
     { name: 'Kulfi', description: 'Indian ice cream', price: 99, isVeg: true, categoryId: desserts.id },
   ];
 
-  await Promise.all(
-    menuItems.map(item =>
-      prisma.menuItem.create({
-        data: {
-          ...item,
-          isAvailable: true,
-        },
-      })
-    )
-  );
+  // Create menu items sequentially to avoid exhausting Supabase connection pool
+  for (const item of menuItems) {
+    await prisma.menuItem.create({
+      data: {
+        ...item,
+        isAvailable: true,
+      },
+    });
+  }
   console.log(`✅ ${menuItems.length} menu items created`);
 
   console.log('\n🎉 Seed complete!');
