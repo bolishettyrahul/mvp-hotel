@@ -127,7 +127,7 @@ export async function POST(request: NextRequest) {
 
     // Get restaurant tax rate
     const restaurant = await prisma.restaurant.findFirst();
-    const taxPercent = restaurant?.taxPercent || 0;
+    const taxPercent = Number(restaurant?.taxPercent || 0);
 
     // Calculate totals
     const menuItemMap = new Map(menuItems.map(mi => [mi.id, mi]));
@@ -135,13 +135,14 @@ export async function POST(request: NextRequest) {
 
     const orderItems = items.map(item => {
       const menuItem = menuItemMap.get(item.menuItemId)!;
-      const itemTotal = menuItem.price * item.quantity;
+      const price = Number(menuItem.price);
+      const itemTotal = price * item.quantity;
       subtotal += itemTotal;
 
       return {
         menuItemId: item.menuItemId,
         name: menuItem.name,
-        price: menuItem.price,
+        price,
         quantity: item.quantity,
         notes: item.notes ? sanitizeHtml(item.notes) : null,
       };
