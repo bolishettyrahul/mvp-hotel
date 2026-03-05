@@ -50,20 +50,35 @@ export async function POST(request: NextRequest) {
       });
 
       if (!existingSession) {
-        // Edge case: Table is not available but has no active session (maybe reserved or disabled)
-        return errorResponse('VALIDATION_ERROR', 'Table is currently unavailable.', 400);
-      }
+        // Stale state: table is OCCUPIED/RESERVED but has no active session.
+        // This can happen when a session expires but the table status wasn't reset.
+        // Auto-recover by resetting the table to AVAILABLE and claiming it.
+        if (table.status === 'OCCUPIED' || table.status === 'RESERVED') {
+          const reclaimedTable = await prisma.table.updateMany({
+            where: { id: tableId, isActive: true },
+            data: { status: 'OCCUPIED' },
+          });
 
-      // Return existing session (same party scenario)
-      const response = successResponse(existingSession);
-      response.cookies.set('session-id', existingSession.id, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'strict',
-        maxAge: 4 * 60 * 60,
-        path: '/',
-      });
-      return response;
+          if (reclaimedTable.count > 0) {
+            // Fall through to create a new session below
+          } else {
+            return errorResponse('VALIDATION_ERROR', 'Table is currently unavailable.', 400);
+          }
+        } else {
+          return errorResponse('VALIDATION_ERROR', 'Table is currently unavailable.', 400);
+        }
+      } else {
+        // Return existing session (same party scenario)
+        const response = successResponse(existingSession);
+        response.cookies.set('session-id', existingSession.id, {
+          httpOnly: true,
+          secure: process.env.NODE_ENV === 'production',
+          sameSite: 'strict',
+          maxAge: 4 * 60 * 60,
+          path: '/',
+        });
+        return response;
+      }
     }
 
     // We successfully claimed the table. Now exclusively create the session.
