@@ -4,6 +4,8 @@ import { updateSessionSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError, errorResponse } from '@/lib/api-response';
 import { requireAuth, getSessionId } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { sessionId: string } }

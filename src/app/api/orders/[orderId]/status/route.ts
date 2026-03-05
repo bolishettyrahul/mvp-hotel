@@ -5,6 +5,8 @@ import { successResponse, validationError, notFound, internalError, errorRespons
 import { ORDER_STATUS_FLOW } from '@/lib/utils';
 import { requireAuth } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function PATCH(
   request: NextRequest,
   { params }: { params: { orderId: string } }

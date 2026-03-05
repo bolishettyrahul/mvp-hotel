@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { successResponse, notFound, internalError } from '@/lib/api-response';
 import { requireAuth } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function DELETE(
   request: NextRequest,
   { params }: { params: { staffId: string } }

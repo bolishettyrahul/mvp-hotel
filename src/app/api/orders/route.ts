@@ -6,6 +6,8 @@ import {
   errorResponse, rateLimited
 } from '@/lib/api-response';
 import { checkRateLimit, requireAuth } from '@/lib/middleware-helpers';
+
+export const dynamic = 'force-dynamic';
 import { escapeHtml } from '@/lib/utils';
 
 export async function GET(request: NextRequest) {

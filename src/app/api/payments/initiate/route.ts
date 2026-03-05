@@ -4,6 +4,8 @@ import { initiatePaymentSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError, conflict, unauthorized } from '@/lib/api-response';
 import { getSessionId } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

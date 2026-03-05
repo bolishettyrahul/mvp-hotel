@@ -4,6 +4,8 @@ import { verifyPaymentSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError, errorResponse } from '@/lib/api-response';
 import { requireAuth } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     // Only authenticated staff can verify payments

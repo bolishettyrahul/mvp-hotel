@@ -4,6 +4,8 @@ import { createSessionSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError, errorResponse } from '@/lib/api-response';
 import { checkRateLimit, getClientIP } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function POST(request: NextRequest) {
   try {
     const ip = getClientIP(request);

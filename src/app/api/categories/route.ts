@@ -4,6 +4,8 @@ import { createCategorySchema } from '@/lib/validations';
 import { successResponse, validationError, conflict, internalError } from '@/lib/api-response';
 import { requireAuth } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     const categories = await prisma.category.findMany({

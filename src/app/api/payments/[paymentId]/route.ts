@@ -3,6 +3,8 @@ import prisma from '@/lib/prisma';
 import { successResponse, notFound, internalError, unauthorized } from '@/lib/api-response';
 import { getSessionId, getStaffFromRequest } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   request: NextRequest,
   { params }: { params: { paymentId: string } }

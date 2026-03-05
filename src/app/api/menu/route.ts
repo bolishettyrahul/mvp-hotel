@@ -4,6 +4,8 @@ import { createMenuItemSchema } from '@/lib/validations';
 import { successResponse, validationError, internalError } from '@/lib/api-response';
 import { requireAuth } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);

@@ -4,6 +4,8 @@ import { updateMenuItemSchema } from '@/lib/validations';
 import { successResponse, validationError, notFound, internalError } from '@/lib/api-response';
 import { requireAuth } from '@/lib/middleware-helpers';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(
   _request: NextRequest,
   { params }: { params: { itemId: string } }
