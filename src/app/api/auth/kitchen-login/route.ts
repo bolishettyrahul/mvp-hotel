@@ -4,7 +4,7 @@ import prisma from '@/lib/prisma';
 import { signToken } from '@/lib/auth';
 import { kitchenLoginSchema } from '@/lib/validations';
 import { successResponse, validationError, unauthorized, rateLimited, internalError } from '@/lib/api-response';
-import { checkRateLimit, getClientIP } from '@/lib/middleware-helpers';
+import { checkRateLimit, getClientIP, checkLoginLockout, recordLoginFailure, clearLoginLockout } from '@/lib/middleware-helpers';
 
 export const dynamic = 'force-dynamic';
 
@@ -13,6 +13,13 @@ export async function POST(request: NextRequest) {
     const ip = getClientIP(request);
     if (!checkRateLimit(`kitchen-login:${ip}`, 5, 60000)) {
       return rateLimited('Too many login attempts. Try again in 1 minute.');
+    }
+
+    // Progressive lockout check
+    const lockoutKey = `kitchen-lockout:${ip}`;
+    const lockout = checkLoginLockout(lockoutKey);
+    if (!lockout.allowed) {
+      return rateLimited(`Account locked. Try again in ${lockout.retryAfterSeconds} seconds.`);
     }
 
     const body = await request.json();
@@ -38,8 +45,11 @@ export async function POST(request: NextRequest) {
     }
 
     if (!matchedStaff) {
+      recordLoginFailure(lockoutKey);
       return unauthorized('Invalid PIN');
     }
+
+    clearLoginLockout(lockoutKey);
 
     const token = await signToken({
       staffId: matchedStaff.id,
@@ -52,7 +62,7 @@ export async function POST(request: NextRequest) {
       staff: { id: matchedStaff.id, name: matchedStaff.name, role: matchedStaff.role },
     });
 
-    response.cookies.set('auth-token', token, {
+    response.cookies.set('kitchen-auth-token', token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'strict',

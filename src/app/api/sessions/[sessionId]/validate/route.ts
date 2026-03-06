@@ -1,12 +1,22 @@
 import { NextRequest } from 'next/server';
 import prisma from '@/lib/prisma';
-import { successResponse, notFound, internalError, errorResponse } from '@/lib/api-response';
+import { successResponse, notFound, internalError, errorResponse, unauthorized } from '@/lib/api-response';
+import { getSessionId, getStaffFromRequest } from '@/lib/middleware-helpers';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { sessionId: string } }
 ) {
   try {
+    // Verify requester owns this session or is authenticated staff
+    const requestSessionId = getSessionId(request);
+    const isOwner = requestSessionId === params.sessionId;
+    if (!isOwner) {
+      const staff = await getStaffFromRequest(request);
+      if (!staff) {
+        return unauthorized('Session validation requires ownership');
+      }
+    }
     const session = await prisma.session.findUnique({
       where: { id: params.sessionId },
       select: {

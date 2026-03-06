@@ -35,6 +35,9 @@ export async function POST(request: NextRequest) {
       return errorResponse('VALIDATION_ERROR', 'This table is currently disabled.', 400);
     }
 
+    // Flag to track if we recovered from stale state
+    let tableClaimed = false;
+
     // Attempt to atomically claim the table if it is AVAILABLE
     const claimedTable = await prisma.table.updateMany({
       where: { id: tableId, status: 'AVAILABLE', isActive: true },
@@ -54,15 +57,24 @@ export async function POST(request: NextRequest) {
         // This can happen when a session expires but the table status wasn't reset.
         // Auto-recover by resetting the table to AVAILABLE and claiming it.
         if (table.status === 'OCCUPIED' || table.status === 'RESERVED') {
+          // First, reset table to AVAILABLE
+          await prisma.table.update({
+            where: { id: tableId },
+            data: { status: 'AVAILABLE' },
+          });
+
+          // Now try to claim it atomically
           const reclaimedTable = await prisma.table.updateMany({
-            where: { id: tableId, isActive: true },
+            where: { id: tableId, status: 'AVAILABLE', isActive: true },
             data: { status: 'OCCUPIED' },
           });
 
           if (reclaimedTable.count > 0) {
-            // Fall through to create a new session below
+            // Successfully claimed after recovery
+            tableClaimed = true;
           } else {
-            return errorResponse('VALIDATION_ERROR', 'Table is currently unavailable.', 400);
+            // Race condition: another request claimed it between reset and our claim
+            return errorResponse('VALIDATION_ERROR', 'Table is currently unavailable. Please try again.', 400);
           }
         } else {
           return errorResponse('VALIDATION_ERROR', 'Table is currently unavailable.', 400);
@@ -79,6 +91,14 @@ export async function POST(request: NextRequest) {
         });
         return response;
       }
+    } else {
+      // Successfully claimed on first attempt
+      tableClaimed = true;
+    }
+
+    // Create session (either from first claim or after stale state recovery)
+    if (!tableClaimed) {
+      return errorResponse('VALIDATION_ERROR', 'Failed to claim table. Please try again.', 400);
     }
 
     // We successfully claimed the table. Now exclusively create the session.

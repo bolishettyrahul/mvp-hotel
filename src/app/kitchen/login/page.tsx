@@ -11,7 +11,7 @@ export default function KitchenLoginPage() {
   const [loading, setLoading] = useState(false);
 
   const handlePinInput = (digit: string) => {
-    if (pin.length < 4) {
+    if (pin.length < 6) {
       setPin(prev => prev + digit);
       setError('');
     }
@@ -22,7 +22,7 @@ export default function KitchenLoginPage() {
   };
 
   const handleSubmit = useCallback(async () => {
-    if (pin.length !== 4) return;
+    if (pin.length < 4 || pin.length > 6) return;
     setLoading(true);
     setError('');
 
@@ -43,8 +43,8 @@ export default function KitchenLoginPage() {
         return;
       }
 
-      // Store token
-      localStorage.setItem('auth-token', data.data.token);
+      // Store a non-sensitive login marker (token is in httpOnly cookie)
+      localStorage.setItem('kitchen-logged-in', 'true');
       router.push('/kitchen');
     } catch {
       setError('Unable to connect. Please try again.');
@@ -54,10 +54,10 @@ export default function KitchenLoginPage() {
     }
   }, [pin, router]);
 
-  // Auto-submit when 4 digits entered
+  // Auto-submit when 6 digits entered
   const submittedRef = useRef(false);
   useEffect(() => {
-    if (pin.length === 4 && !loading && !submittedRef.current) {
+    if (pin.length === 6 && !loading && !submittedRef.current) {
       submittedRef.current = true;
       handleSubmit().finally(() => { submittedRef.current = false; });
     }
@@ -68,15 +68,15 @@ export default function KitchenLoginPage() {
       <div className="max-w-sm w-full">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-white mb-2">Kitchen Login</h1>
-          <p className="text-gray-400">Enter your 4-digit PIN</p>
+          <p className="text-gray-400">Enter your 6-digit PIN</p>
         </div>
 
         {/* PIN Display */}
         <div className="flex justify-center gap-3 mb-8">
-          {[0, 1, 2, 3].map(i => (
+          {[0, 1, 2, 3, 4, 5].map(i => (
             <div
               key={i}
-              className={`w-14 h-14 rounded-lg border-2 flex items-center justify-center text-2xl font-bold ${pin.length > i
+              className={`w-12 h-12 rounded-lg border-2 flex items-center justify-center text-2xl font-bold ${pin.length > i
                   ? 'border-orange-500 bg-orange-500/20 text-white'
                   : 'border-gray-600 bg-gray-800 text-gray-600'
                 }`}
@@ -110,7 +110,7 @@ export default function KitchenLoginPage() {
               <button
                 key={key}
                 onClick={() => handlePinInput(key)}
-                disabled={pin.length >= 4}
+                disabled={pin.length >= 6}
                 className="h-14 min-w-[44px] rounded-lg bg-gray-800 text-white text-xl font-medium hover:bg-gray-700 transition-colors active:bg-gray-600 disabled:opacity-50 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
               >
                 {key}

@@ -52,6 +52,7 @@ export async function PATCH(
         include: {
           items: true,
           table: { select: { number: true } },
+          payment: true,
         },
       });
 
@@ -65,6 +66,43 @@ export async function PATCH(
           note,
         },
       });
+
+      // When order is COMPLETED, auto-complete CASH/PAY_AT_COUNTER payments
+      if (newStatus === 'COMPLETED' && updatedOrder.payment) {
+        const pmt = updatedOrder.payment;
+        if (
+          (pmt.method === 'CASH' || pmt.method === 'PAY_AT_COUNTER') &&
+          pmt.status !== 'COMPLETED'
+        ) {
+          await tx.payment.update({
+            where: { id: pmt.id },
+            data: { status: 'COMPLETED', paidAt: new Date() },
+          });
+        }
+      }
+
+      // When order is COMPLETED or CANCELLED, check if all session orders are done
+      if ((newStatus === 'COMPLETED' || newStatus === 'CANCELLED') && order.sessionId) {
+        const pendingOrders = await tx.order.count({
+          where: {
+            sessionId: order.sessionId,
+            id: { not: params.orderId },
+            status: { notIn: ['COMPLETED', 'CANCELLED'] },
+          },
+        });
+
+        if (pendingOrders === 0) {
+          // All orders done — complete session and free table
+          const session = await tx.session.update({
+            where: { id: order.sessionId },
+            data: { status: 'COMPLETED', completedAt: new Date() },
+          });
+          await tx.table.update({
+            where: { id: session.tableId },
+            data: { status: 'AVAILABLE' },
+          });
+        }
+      }
 
       return updatedOrder;
     });

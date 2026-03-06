@@ -6,6 +6,22 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('🌱 Seeding database...');
 
+  // Read credentials from env — never hardcode in production
+  const adminEmail = process.env.SEED_ADMIN_EMAIL || 'admin@qrdine.com';
+  const adminPassword = process.env.SEED_ADMIN_PASSWORD;
+  const kitchenPin = process.env.SEED_KITCHEN_PIN;
+
+  if (!adminPassword || !kitchenPin) {
+    console.error('❌ SEED_ADMIN_PASSWORD and SEED_KITCHEN_PIN environment variables are required.');
+    console.error('   Example: SEED_ADMIN_PASSWORD=mySecurePass123 SEED_KITCHEN_PIN=123456 npx prisma db seed');
+    process.exit(1);
+  }
+
+  if (kitchenPin.length < 6 || !/^\d+$/.test(kitchenPin)) {
+    console.error('❌ SEED_KITCHEN_PIN must be at least 6 digits.');
+    process.exit(1);
+  }
+
   // Check if restaurant already exists
   const existingRestaurant = await prisma.restaurant.findFirst();
   if (existingRestaurant) {
@@ -24,19 +40,19 @@ async function main() {
   console.log(`✅ Restaurant: ${restaurant.name}`);
 
   // Create admin user
-  const hashedPassword = await bcrypt.hash('admin123', 12);
+  const hashedPassword = await bcrypt.hash(adminPassword, 12);
   const admin = await prisma.staff.create({
     data: {
       name: 'Admin',
-      email: 'admin@qrdine.com',
+      email: adminEmail,
       passwordHash: hashedPassword,
       role: 'ADMIN',
     },
   });
-  console.log(`✅ Admin: ${admin.email} / admin123`);
+  console.log(`✅ Admin: ${admin.email}`);
 
   // Create kitchen staff (PIN is bcrypt-hashed)
-  const hashedPin = await bcrypt.hash('1234', 10);
+  const hashedPin = await bcrypt.hash(kitchenPin, 10);
   const kitchenStaff = await prisma.staff.create({
     data: {
       name: 'Kitchen 1',
@@ -44,7 +60,7 @@ async function main() {
       role: 'KITCHEN',
     },
   });
-  console.log(`✅ Kitchen staff: ${kitchenStaff.name} / PIN: 1234`);
+  console.log(`✅ Kitchen staff: ${kitchenStaff.name}`);
 
   // Create tables
   const tables = await Promise.all(

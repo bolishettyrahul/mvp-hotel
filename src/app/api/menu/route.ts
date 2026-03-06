@@ -41,9 +41,9 @@ export async function GET(request: NextRequest) {
     }, {} as Record<string, { categoryId: string; categoryName: string; items: typeof menuItems }>);
 
     const response = successResponse(Object.values(grouped));
-    // Cache for 10 seconds, serve stale content while revalidating for up to 59 seconds
-    // This allows the server to handle essentially infinite concurrent users scanning QR codes at once
-    response.headers.set('Cache-Control', 'public, s-maxage=10, stale-while-revalidate=59');
+    // no-cache forces browsers to revalidate every request (availability changes appear immediately).
+    // s-maxage=10 still lets CDN/proxy cache for 10 s to absorb high QR scan traffic.
+    response.headers.set('Cache-Control', 'no-cache, s-maxage=10, stale-while-revalidate=30');
 
     return response;
   } catch (error) {

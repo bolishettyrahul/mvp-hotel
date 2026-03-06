@@ -32,7 +32,7 @@ export default function AdminLoginPage() {
         return;
       }
 
-      localStorage.setItem('auth-token', data.data.token);
+      localStorage.setItem('admin-logged-in', 'true');
       router.push('/admin');
     } catch {
       setError('Unable to connect. Please try again.');

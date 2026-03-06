@@ -2,12 +2,15 @@ import { NextRequest } from 'next/server';
 import QRCode from 'qrcode';
 import prisma from '@/lib/prisma';
 import { successResponse, notFound, internalError } from '@/lib/api-response';
+import { requireAuth } from '@/lib/middleware-helpers';
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: { tableId: string } }
 ) {
   try {
+    const { error } = await requireAuth(request, ['ADMIN']);
+    if (error) return error;
     const table = await prisma.table.findUnique({
       where: { id: params.tableId, isActive: true },
     });

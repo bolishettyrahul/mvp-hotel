@@ -29,19 +29,26 @@ export default function AdminTablesPage() {
 
   const executeDelete = async () => {
     if (!deleteId) return;
-    const token = localStorage.getItem('auth-token');
-    await fetch(`/api/tables/${deleteId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    mutate('/api/tables');
-    setDeleteId(null);
+    try {
+      const res = await fetch(`/api/tables/${deleteId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || `Failed to delete table (${res.status})`);
+      }
+      mutate('/api/tables');
+      setDeleteId(null);
+    } catch (err) {
+      console.error('Delete table failed:', err);
+      setDeleteId(null);
+    }
   };
 
   const showQR = async (tableId: string) => {
-    const token = localStorage.getItem('auth-token');
     const res = await fetch(`/api/tables/${tableId}/qr`, {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     });
     const d = await res.json();
     if (d.success) {
@@ -200,13 +207,44 @@ function TableFormModal({ table, onClose }: { table: Table | null; onClose: () =
     e.preventDefault();
     setLoading(true);
     setError('');
-    const token = localStorage.getItem('auth-token');
+
+    // If changing to AVAILABLE, verify there's no active session
+    if (table && status === 'AVAILABLE' && table.status !== 'AVAILABLE') {
+      try {
+        const sessionsRes = await fetch(`/api/tables/${table.id}/sessions`, {
+          credentials: 'include',
+        });
+        const sessionsData = await sessionsRes.json();
+
+        if (sessionsData.success) {
+          const activeSessions = (sessionsData.data || []).filter(
+            (s: Record<string, unknown>) => s.status === 'ACTIVE'
+          );
+
+          if (activeSessions.length > 0) {
+            setError(
+              `Cannot mark as available: ${activeSessions.length} active session(s) exist. ` +
+              `Please ask guests to complete their dining or manually expire the session first.`
+            );
+            setLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check sessions:', err);
+        setError('Could not verify active sessions. Please try again.');
+        setLoading(false);
+        return;
+      }
+    }
+
     const url = table ? `/api/tables/${table.id}` : '/api/tables';
     const method = table ? 'PATCH' : 'POST';
 
     const res = await fetch(url, {
       method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({
         number: Number(number),
         label: label || undefined,

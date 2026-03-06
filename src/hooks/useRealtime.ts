@@ -16,25 +16,50 @@ export function useRealtimeSubscription(
   callbackRef.current = callback;
 
   useEffect(() => {
-    const channelConfig = supabase
-      .channel(channel)
-      .on(
-        'postgres_changes' as never,
-        {
-          event,
-          schema: 'public',
-          table,
-          ...(filter ? { filter } : {}),
-        } as never,
-        (payload: Record<string, unknown>) => {
-          callbackRef.current(payload);
-        }
-      )
-      .subscribe();
+    let isSubscribed = true;
+    let channelInstance: ReturnType<typeof supabase.channel> | null = null;
 
-    return () => {
-      supabase.removeChannel(channelConfig);
-    };
+    try {
+      const channelName = `${channel}-${table}${filter ? `-${filter.replace(/[^a-z0-9]/g, '')}` : ''}`;
+      
+      channelInstance = supabase
+        .channel(channelName)
+        .on(
+          'postgres_changes' as never,
+          {
+            event,
+            schema: 'public',
+            table,
+            ...(filter ? { filter } : {}),
+          } as never,
+          (payload: Record<string, unknown>) => {
+            if (isSubscribed) {
+              callbackRef.current(payload);
+            }
+          }
+        )
+        .subscribe(async (status: string) => {
+          if (status === 'CHANNEL_ERROR') {
+            console.error(`[Realtime] Subscription failed for ${table}. Status: ${status}`);
+          } else if (status === 'SUBSCRIBED') {
+            console.log(`[Realtime] Successfully subscribed to ${table}`);
+          }
+        });
+
+      return () => {
+        isSubscribed = false;
+        if (channelInstance) {
+          supabase.removeChannel(channelInstance);
+        }
+      };
+    } catch (err) {
+      console.error(`[Realtime] Failed to setup subscription for ${table}:`, err);
+      return () => {
+        if (channelInstance) {
+          supabase.removeChannel(channelInstance);
+        }
+      };
+    }
   }, [channel, table, event, filter]);
 }
 
@@ -60,44 +85,96 @@ export function useFallbackPolling(
 
 // SWR fetcher utility
 export const swrFetcher = async (url: string) => {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('Failed to fetch');
-  const json = await res.json();
-  if (!json.success) throw new Error(json.error?.message || 'Request failed');
-  return json.data;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) {
+      let errorMessage = `HTTP ${res.status}`;
+      try {
+        const errorData = await res.json();
+        errorMessage = errorData.error?.message || errorMessage;
+      } catch {
+        // JSON parse failed, use HTTP status as error
+      }
+      const error = new Error(errorMessage);
+      (error as unknown as Record<string, unknown>).status = res.status;
+      throw error;
+    }
+    
+    try {
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error?.message || 'Request failed');
+      return json.data;
+    } catch (parseError) {
+      if (parseError instanceof SyntaxError) {
+        throw new Error('Invalid response format from server');
+      }
+      throw parseError;
+    }
+  } catch (error: unknown) {
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error('Network error or unknown failure');
+  }
 };
 
-// Auth-aware SWR fetcher
-export function useAuthFetcher() {
-  return useCallback(async (url: string) => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('auth-token') : null;
-    if (!token) {
-      throw new Error('No auth token — please log in');
-    }
-    const headers: Record<string, string> = {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${token}`,
-    };
-
-    const res = await fetch(url, {
-      credentials: 'include',
-      headers,
-    });
-    if (!res.ok) {
-      if (res.status === 401) {
-        // Token expired / invalid — clear and redirect
-        localStorage.removeItem('auth-token');
-        document.cookie = 'auth-token=; path=/; max-age=0';
-        if (typeof window !== 'undefined') {
-          window.location.href = '/admin/login';
-        }
-        throw new Error('Session expired — please log in again');
+// Auth-aware SWR fetcher — checks login marker in localStorage, sends httpOnly cookie
+function makeAuthFetcher(markerKey: string, redirectPath: string) {
+  return function useSpecificAuthFetcher() {
+    return useCallback(async (url: string) => {
+      const isLoggedIn = typeof window !== 'undefined' ? localStorage.getItem(markerKey) : null;
+      if (!isLoggedIn) {
+        throw new Error('No auth token — please log in');
       }
-      const errorBody = await res.json().catch(() => null);
-      throw new Error(errorBody?.error?.message || `Request failed (${res.status})`);
-    }
-    const json = await res.json();
-    if (!json.success) throw new Error(json.error?.message || 'Request failed');
-    return json.data;
-  }, []);
+
+      try {
+        const res = await fetch(url, {
+          credentials: 'include',
+        });
+
+        if (!res.ok) {
+          if (res.status === 401) {
+            localStorage.removeItem(markerKey);
+            if (typeof window !== 'undefined') {
+              window.location.href = redirectPath;
+            }
+            throw new Error('Session expired — please log in again');
+          }
+
+          let errorMessage = `HTTP ${res.status}`;
+          try {
+            const errorBody = await res.json();
+            errorMessage = errorBody?.error?.message || errorMessage;
+          } catch {
+            // JSON parse failed, use HTTP status
+          }
+          const error = new Error(errorMessage);
+          (error as unknown as Record<string, unknown>).status = res.status;
+          throw error;
+        }
+
+        try {
+          const json = await res.json();
+          if (!json.success) throw new Error(json.error?.message || 'Request failed');
+          return json.data;
+        } catch (parseError) {
+          if (parseError instanceof SyntaxError) {
+            throw new Error('Invalid response format from server');
+          }
+          throw parseError;
+        }
+      } catch (error) {
+        if (error instanceof Error) {
+          throw error;
+        }
+        throw new Error('Network error or authentication failure');
+      }
+    }, []);
+  };
 }
+
+// Admin fetcher — checks 'admin-logged-in' marker, redirects to /admin/login on 401
+export const useAuthFetcher = makeAuthFetcher('admin-logged-in', '/admin/login');
+
+// Kitchen fetcher — checks 'kitchen-logged-in' marker, redirects to /kitchen/login on 401
+export const useKitchenAuthFetcher = makeAuthFetcher('kitchen-logged-in', '/kitchen/login');

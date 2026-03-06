@@ -19,6 +19,10 @@ export default function TableLandingPage({ params }: { params: { tableId: string
             if (parsed.tableId === params.tableId && parsed.sessionId) {
               // Verify session is still active via a quick check
               const checkRes = await fetch(`/api/sessions/${parsed.sessionId}`);
+              if (!checkRes.ok) {
+                localStorage.removeItem('qr-dine-session');
+                throw new Error('Session check failed');
+              }
               const checkData = await checkRes.json();
               if (checkData.success && checkData.data.status === 'ACTIVE') {
                 router.replace(`/table/${params.tableId}/menu`);

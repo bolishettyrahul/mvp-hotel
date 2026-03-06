@@ -8,7 +8,7 @@ export const adminLoginSchema = z.object({
 });
 
 export const kitchenLoginSchema = z.object({
-  pin: z.string().length(4, 'PIN must be exactly 4 digits').regex(/^\d{4}$/, 'PIN must be 4 digits'),
+  pin: z.string().min(4, 'PIN must be 4–6 digits').max(6, 'PIN must be 4–6 digits').regex(/^\d{4,6}$/, 'PIN must be 4–6 digits'),
 });
 
 // ─── Table Schemas ───────────────────────────────────────────────────────────
@@ -114,7 +114,7 @@ export const verifyPaymentSchema = z.object({
 
 export const createKitchenStaffSchema = z.object({
   name: z.string().min(1, 'Name is required').max(50),
-  pin: z.string().length(4, 'PIN must be exactly 4 digits').regex(/^\d{4}$/, 'PIN must be 4 digits'),
+  pin: z.string().length(6, 'PIN must be exactly 6 digits').regex(/^\d{6}$/, 'PIN must be 6 digits'),
 });
 
 // ─── Restaurant Settings Schema ──────────────────────────────────────────────

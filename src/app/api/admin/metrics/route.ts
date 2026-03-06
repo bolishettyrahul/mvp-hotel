@@ -10,6 +10,71 @@ export async function GET(request: NextRequest) {
     const { error } = await requireAuth(request, ['ADMIN']);
     if (error) return error;
 
+    // Clean up stale tables: OCCUPIED but no active non-expired session
+    const now = new Date();
+    const staleTables = await prisma.table.findMany({
+      where: {
+        status: 'OCCUPIED',
+        isActive: true,
+        sessions: {
+          none: {
+            status: 'ACTIVE',
+            expiresAt: { gt: now },
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    if (staleTables.length > 0) {
+      const staleIds = staleTables.map(t => t.id);
+      await prisma.$transaction([
+        prisma.table.updateMany({
+          where: { id: { in: staleIds } },
+          data: { status: 'AVAILABLE' },
+        }),
+        prisma.session.updateMany({
+          where: {
+            tableId: { in: staleIds },
+            status: 'ACTIVE',
+            expiresAt: { lte: now },
+          },
+          data: { status: 'EXPIRED', completedAt: now },
+        }),
+      ]);
+    }
+
+    // Idle session timeout: free tables where all orders are done and session idle >5 min
+    const idleCutoff = new Date(now.getTime() - 5 * 60 * 1000);
+    const idleSessions = await prisma.session.findMany({
+      where: {
+        status: 'ACTIVE',
+        startedAt: { lte: idleCutoff },
+        table: { status: 'OCCUPIED', isActive: true },
+        orders: {
+          every: {
+            status: { in: ['COMPLETED', 'CANCELLED'] },
+          },
+        },
+      },
+      select: { id: true, tableId: true },
+    });
+
+    if (idleSessions.length > 0) {
+      const idleSessionIds = idleSessions.map(s => s.id);
+      const idleTableIds = Array.from(new Set(idleSessions.map(s => s.tableId)));
+      await prisma.$transaction([
+        prisma.session.updateMany({
+          where: { id: { in: idleSessionIds } },
+          data: { status: 'COMPLETED', completedAt: now },
+        }),
+        prisma.table.updateMany({
+          where: { id: { in: idleTableIds } },
+          data: { status: 'AVAILABLE' },
+        }),
+      ]);
+    }
+
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 

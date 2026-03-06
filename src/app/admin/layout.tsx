@@ -24,18 +24,26 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
       setAuthChecked(true);
       return;
     }
-    const token = localStorage.getItem('auth-token');
-    if (!token) {
+    const loggedIn = localStorage.getItem('admin-logged-in');
+    if (!loggedIn) {
       router.replace('/admin/login');
       return;
     }
-    // Validate token with the server
+    // Validate auth cookie with the server and check role
     fetch('/api/auth/me', {
-      headers: { Authorization: `Bearer ${token}` },
+      credentials: 'include',
     })
-      .then(res => {
+      .then(async res => {
         if (!res.ok) {
-          localStorage.removeItem('auth-token');
+          localStorage.removeItem('admin-logged-in');
+          document.cookie = 'auth-token=; path=/; max-age=0';
+          router.replace('/admin/login');
+          return;
+        }
+        const data = await res.json().catch(() => null);
+        // Ensure the token belongs to an ADMIN — kitchen tokens must not grant access
+        if (!data?.data || data.data.role !== 'ADMIN') {
+          localStorage.removeItem('admin-logged-in');
           document.cookie = 'auth-token=; path=/; max-age=0';
           router.replace('/admin/login');
           return;
@@ -44,9 +52,9 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
         setAuthChecked(true);
       })
       .catch(() => {
-        // Network error — still allow if token exists (offline support)
-        setIsAuthed(true);
-        setAuthChecked(true);
+        // Network error — do NOT grant access offline; redirect to login
+        localStorage.removeItem('admin-logged-in');
+        router.replace('/admin/login');
       });
   }, [pathname, router]);
 
@@ -68,7 +76,7 @@ export default function AdminLayout({ children }: { children: ReactNode }) {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('auth-token');
+    localStorage.removeItem('admin-logged-in');
     document.cookie = 'auth-token=; path=/; max-age=0';
     router.push('/admin/login');
   };

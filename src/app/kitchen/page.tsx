@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import useSWR from 'swr';
 import { useRouter } from 'next/navigation';
-import { useAuthFetcher, useRealtimeSubscription } from '@/hooks/useRealtime';
+import { useKitchenAuthFetcher, useRealtimeSubscription, useFallbackPolling } from '@/hooks/useRealtime';
 import { ORDER_STATUS_DISPLAY, ORDER_STATUS_FLOW } from '@/lib/utils';
 import { Button } from '@/components/Button';
 import { OrderCardSkeleton } from '@/components/Skeleton';
@@ -122,18 +122,18 @@ function KitchenColumn({
 
 export default function KitchenDashboard() {
   const router = useRouter();
-  const authFetcher = useAuthFetcher();
+  const authFetcher = useKitchenAuthFetcher();
   const [updatingOrder, setUpdatingOrder] = useState<string>('');
 
-  // Check auth
+  // Check auth — kitchen uses its own login marker
   useEffect(() => {
-    const token = localStorage.getItem('auth-token');
-    if (!token) {
+    const loggedIn = localStorage.getItem('kitchen-logged-in');
+    if (!loggedIn) {
       router.push('/kitchen/login');
     }
   }, [router]);
 
-  const { data, mutate, isLoading } = useSWR(
+  const { data, error, mutate, isLoading } = useSWR(
     '/api/orders?status=PLACED&status=CONFIRMED&status=PREPARING&status=READY&limit=50',
     authFetcher,
     { refreshInterval: 15000, revalidateOnFocus: true }
@@ -156,16 +156,25 @@ export default function KitchenDashboard() {
     }
   );
 
+  // Fallback polling: poll every 30 seconds in case realtime fails
+  useFallbackPolling(
+    async () => {
+      console.log('[Fallback] Polling orders');
+      await mutate().catch(err => console.error('[Fallback] Polling failed:', err));
+    },
+    30000, // 30 seconds
+    true   // always enabled as backup
+  );
+
   const handleStatusUpdate = useCallback(async (orderId: string, newStatus: string) => {
     setUpdatingOrder(orderId);
     try {
-      const token = localStorage.getItem('auth-token');
       const res = await fetch(`/api/orders/${orderId}/status`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${token}`,
         },
+        credentials: 'include',
         body: JSON.stringify({ status: newStatus }),
       });
 
@@ -190,8 +199,8 @@ export default function KitchenDashboard() {
   };
 
   const handleLogout = () => {
-    localStorage.removeItem('auth-token');
-    document.cookie = 'auth-token=; path=/; max-age=0';
+    localStorage.removeItem('kitchen-logged-in');
+    document.cookie = 'kitchen-auth-token=; path=/; max-age=0';
     router.push('/kitchen/login');
   };
 
@@ -223,6 +232,11 @@ export default function KitchenDashboard() {
                 <OrderCardSkeleton />
               </div>
             ))}
+          </div>
+        ) : error ? (
+          <div className="bg-gray-800 border border-red-500/30 rounded-xl p-8 text-center">
+            <p className="text-red-400 font-medium mb-3">Failed to load orders</p>
+            <button onClick={() => mutate()} className="text-sm px-4 py-2 bg-red-500/20 text-red-300 rounded-lg font-medium hover:bg-red-500/30 transition-colors">Retry</button>
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

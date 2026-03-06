@@ -18,21 +18,31 @@ interface KitchenStaff {
 
 export default function AdminKitchenStaffPage() {
   const authFetcher = useAuthFetcher();
-  const { data, isLoading } = useSWR('/api/admin/kitchen-staff', authFetcher);
+  const { data, error, isLoading, mutate: refreshStaff } = useSWR('/api/admin/kitchen-staff', authFetcher);
   const [showForm, setShowForm] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
 
   const staff: KitchenStaff[] = data || [];
 
   const executeDelete = async () => {
     if (!deleteId) return;
-    const token = localStorage.getItem('auth-token');
-    await fetch(`/api/admin/kitchen-staff/${deleteId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    mutate('/api/admin/kitchen-staff');
-    setDeleteId(null);
+    setActionError('');
+    try {
+      const res = await fetch(`/api/admin/kitchen-staff/${deleteId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || `Failed to deactivate (${res.status})`);
+      }
+      mutate('/api/admin/kitchen-staff');
+      setDeleteId(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Operation failed');
+      setDeleteId(null);
+    }
   };
 
   return (
@@ -45,6 +55,11 @@ export default function AdminKitchenStaffPage() {
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3].map(i => <Skeleton key={i} className="h-16 w-full rounded-xl" />)}
+        </div>
+      ) : error ? (
+        <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+          <p className="text-red-700 font-medium mb-3">Failed to load kitchen staff</p>
+          <button onClick={() => refreshStaff()} className="text-sm px-4 py-2 bg-red-100 text-red-700 rounded-lg font-medium hover:bg-red-200 transition-colors">Retry</button>
         </div>
       ) : staff.length === 0 ? (
         <div className="bg-white rounded-xl shadow-sm p-12 text-center text-gray-400">
@@ -82,6 +97,13 @@ export default function AdminKitchenStaffPage() {
 
       {showForm && <StaffFormModal onClose={() => setShowForm(false)} />}
 
+      {actionError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-xl shadow-lg z-50 text-sm font-medium">
+          {actionError}
+          <button onClick={() => setActionError('')} className="ml-3 underline">Dismiss</button>
+        </div>
+      )}
+
       <ConfirmModal
         isOpen={!!deleteId}
         title="Deactivate Staff"
@@ -104,10 +126,10 @@ function StaffFormModal({ onClose }: { onClose: () => void }) {
     e.preventDefault();
     setLoading(true);
     setError('');
-    const token = localStorage.getItem('auth-token');
     const res = await fetch('/api/admin/kitchen-staff', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
       body: JSON.stringify({ name, pin }),
     });
     const data = await res.json();
@@ -146,11 +168,11 @@ function StaffFormModal({ onClose }: { onClose: () => void }) {
             name="pin"
             inputMode="numeric"
             value={pin}
-            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 4))}
-            placeholder="0000"
+            onChange={e => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder="000000"
             required
-            maxLength={4}
-            pattern="\d{4}"
+            maxLength={6}
+            pattern="\d{6}"
             className="w-full px-4 py-3 border border-gray-200 rounded-lg text-gray-900 font-mono tracking-widest text-center text-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-orange-500"
           />
           <p className="text-xs text-gray-400 mt-1">Used to log into the kitchen display</p>

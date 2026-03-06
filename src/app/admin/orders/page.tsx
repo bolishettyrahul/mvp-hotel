@@ -18,8 +18,9 @@ export default function AdminOrdersPage() {
   const query = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (status) query.set('status', status);
 
-  const { data, isLoading } = useSWR(`/api/orders?${query}`, authFetcher, {
+  const { data, isLoading, error, mutate } = useSWR(`/api/orders?${query}`, authFetcher, {
     refreshInterval: 10000,
+    onError: (err) => console.error('[Admin Orders] Failed to load:', err),
   });
 
   const orders = data?.orders || [];
@@ -59,6 +60,17 @@ export default function AdminOrdersPage() {
         {isLoading ? (
           <div className="space-y-3">
             {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-[88px] w-full rounded-[20px] bg-stone-100/80" />)}
+          </div>
+        ) : error ? (
+          <div className="bg-red-50 rounded-[24px] p-8 text-center border-2 border-red-100">
+            <p className="text-red-700 font-bold mb-2">Failed to load orders</p>
+            <p className="text-red-600 text-sm mb-6">{error instanceof Error ? error.message : 'Unknown error'}</p>
+            <button
+              onClick={() => mutate()}
+              className="px-6 py-3 bg-red-600 text-white rounded-[14px] font-bold hover:bg-red-700 transition-colors active:scale-[0.98]"
+            >
+              Retry
+            </button>
           </div>
         ) : orders.length === 0 ? (
           <div className="py-20 text-center border-2 border-dashed border-stone-200 rounded-[24px]">

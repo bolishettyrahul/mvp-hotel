@@ -41,13 +41,38 @@ export async function POST(request: NextRequest) {
     // For UPI payments, verify transaction (placeholder for real UPI verification)
     // For CASH/PAY_AT_COUNTER, this is admin confirming receipt
 
-    const updated = await prisma.payment.update({
-      where: { id: paymentId },
-      data: {
-        status: 'COMPLETED',
-        transactionId: transactionId || null,
-        paidAt: new Date(),
-      },
+    const updated = await prisma.$transaction(async (tx) => {
+      const pmt = await tx.payment.update({
+        where: { id: paymentId },
+        data: {
+          status: 'COMPLETED',
+          transactionId: transactionId || null,
+          paidAt: new Date(),
+        },
+      });
+
+      // If all orders for this session are now paid, complete session & free the table
+      if (payment.order?.sessionId) {
+        const unpaid = await tx.payment.count({
+          where: {
+            order: { sessionId: payment.order.sessionId },
+            status: { not: 'COMPLETED' },
+            id: { not: paymentId },
+          },
+        });
+        if (unpaid === 0) {
+          const session = await tx.session.update({
+            where: { id: payment.order.sessionId },
+            data: { status: 'COMPLETED', completedAt: new Date() },
+          });
+          await tx.table.update({
+            where: { id: session.tableId },
+            data: { status: 'AVAILABLE' },
+          });
+        }
+      }
+
+      return pmt;
     });
 
     return successResponse(updated);

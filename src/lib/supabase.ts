@@ -1,5 +1,12 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
+// Startup validation — warn about critical missing env vars
+if (typeof process !== 'undefined' && process.env.NODE_ENV === 'production') {
+  if (!process.env.NEXT_PUBLIC_APP_URL) {
+    console.error('❌ NEXT_PUBLIC_APP_URL is not set. CORS and QR codes will use fallback URLs.');
+  }
+}
+
 let _supabase: SupabaseClient | null = null;
 
 export function getSupabase(): SupabaseClient {

@@ -6,8 +6,9 @@ const PROTECTED_PATTERNS = [
   { pattern: /^\/api\/admin/, roles: ['ADMIN'] },
   { pattern: /^\/api\/tables(?!\/)/, roles: ['ADMIN'] },
   { pattern: /^\/api\/tables\/[^/]+$/, roles: ['ADMIN'] },
+  { pattern: /^\/api\/tables\/[^/]+\/qr$/, roles: ['ADMIN'] },
   { pattern: /^\/api\/categories$/, methods: ['POST'], roles: ['ADMIN'] },
-  { pattern: /^\/api\/categories\//, methods: ['PATCH'], roles: ['ADMIN'] },
+  { pattern: /^\/api\/categories\/[^/]+$/, methods: ['PATCH', 'DELETE'], roles: ['ADMIN'] },
   { pattern: /^\/api\/menu$/, methods: ['POST'], roles: ['ADMIN'] },
   { pattern: /^\/api\/menu\/[^/]+$/, methods: ['PATCH', 'DELETE'], roles: ['ADMIN'] },
   { pattern: /^\/api\/menu\/[^/]+\/availability$/, methods: ['PATCH'], roles: ['ADMIN', 'KITCHEN'] },
@@ -37,7 +38,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // CORS: Set headers on all API responses
-  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || '*';
+  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 3000}`;
 
   // Handle preflight OPTIONS requests
   if (method === 'OPTIONS') {
@@ -78,6 +79,16 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next(); // Session validation done in the route handler
   }
 
+  // Get individual order (session-based access check inside handler)
+  if (/^\/api\/orders\/[^/]+$/.test(pathname) && method === 'GET') {
+    return NextResponse.next();
+  }
+
+  // Get session details (session owner or staff - verified in handler)
+  if (/^\/api\/sessions\/[^/]+$/.test(pathname) && method === 'GET') {
+    return NextResponse.next();
+  }
+
   // Check protected routes
   for (const route of PROTECTED_PATTERNS) {
     if (route.pattern.test(pathname)) {
@@ -85,11 +96,11 @@ export async function middleware(request: NextRequest) {
         continue;
       }
 
-      // Extract token
+      // Extract token — check Authorization header first, then cookies
       const authHeader = request.headers.get('authorization');
       const token = authHeader?.startsWith('Bearer ')
         ? authHeader.split(' ')[1]
-        : request.cookies.get('auth-token')?.value;
+        : (request.cookies.get('auth-token')?.value || request.cookies.get('kitchen-auth-token')?.value);
 
       if (!token) {
         return NextResponse.json(
@@ -125,7 +136,11 @@ export async function middleware(request: NextRequest) {
     }
   }
 
-  return NextResponse.next();
+  // Default deny: reject any API route not explicitly allowed above
+  return NextResponse.json(
+    { success: false, error: { code: 'NOT_FOUND', message: 'Unknown API route' } },
+    { status: 404 }
+  );
 }
 
 export const config = {

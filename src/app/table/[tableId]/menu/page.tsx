@@ -6,7 +6,7 @@ import Link from 'next/link';
 import Image from 'next/image';
 import { useAutoAnimate } from '@formkit/auto-animate/react';
 import { useCart } from '@/hooks/useCart';
-import { swrFetcher } from '@/hooks/useRealtime';
+import { swrFetcher, useRealtimeSubscription } from '@/hooks/useRealtime';
 import { formatCurrency } from '@/lib/utils';
 import { MenuItemSkeleton } from '@/components/Skeleton';
 
@@ -130,9 +130,14 @@ function CategorySection({
 }
 
 export default function MenuPage({ params }: { params: { tableId: string } }) {
-  const { data: menuData, isLoading } = useSWR<MenuCategory[]>('/api/menu', swrFetcher, {
+  const { data: menuData, isLoading, mutate: refreshMenu } = useSWR<MenuCategory[]>('/api/menu', swrFetcher, {
     revalidateOnFocus: true,
-    refreshInterval: 30000,
+    refreshInterval: 10000,
+  });
+
+  // Instant availability updates via Supabase realtime
+  useRealtimeSubscription('guest-menu', 'MenuItem', '*', () => {
+    refreshMenu();
   });
   const { items: cartItems, addItem, updateQuantity, totalItems, subtotal } = useCart(params.tableId);
   const [activeCategory, setActiveCategory] = useState<string>('');

@@ -36,8 +36,8 @@ interface MenuGroup {
 
 export default function AdminMenuPage() {
   const authFetcher = useAuthFetcher();
-  const { data: menuData, isLoading: menuLoading } = useSWR<MenuGroup[]>('/api/menu', authFetcher);
-  const { data: catData } = useSWR('/api/categories', authFetcher);
+  const { data: menuData, error: menuError, isLoading: menuLoading, mutate: refreshMenu } = useSWR<MenuGroup[]>('/api/menu', authFetcher);
+  const { data: catData, error: catError, mutate: refreshCats } = useSWR('/api/categories', authFetcher);
   const [tabsAnimation] = useAutoAnimate();
   const [gridAnimation] = useAutoAnimate();
 
@@ -51,6 +51,7 @@ export default function AdminMenuPage() {
 
   // Global Fuzzy Search
   const [searchQuery, setSearchQuery] = useState('');
+  const [actionError, setActionError] = useState('');
 
   const categories: Category[] = useMemo(() => {
     if (!catData) return [];
@@ -80,13 +81,22 @@ export default function AdminMenuPage() {
   }, [menuData, currentCategoryId, searchQuery]);
 
   const toggleAvailability = async (item: MenuItem) => {
-    const token = localStorage.getItem('auth-token');
-    await fetch(`/api/menu/${item.id}/availability`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ isAvailable: !item.isAvailable }),
-    });
-    mutate('/api/menu');
+    setActionError('');
+    try {
+      const res = await fetch(`/api/menu/${item.id}/availability`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ isAvailable: !item.isAvailable }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || `Failed to update availability (${res.status})`);
+      }
+      mutate('/api/menu');
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to toggle availability');
+    }
   };
 
   const [deleteItemData, setDeleteItemData] = useState<{ id: string, name: string } | null>(null);
@@ -94,30 +104,54 @@ export default function AdminMenuPage() {
 
   const executeDeleteItem = async () => {
     if (!deleteItemData) return;
-    const token = localStorage.getItem('auth-token');
-    await fetch(`/api/menu/${deleteItemData.id}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    mutate('/api/menu');
-    setDeleteItemData(null);
+    setActionError('');
+    try {
+      const res = await fetch(`/api/menu/${deleteItemData.id}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || `Failed to delete item (${res.status})`);
+      }
+      mutate('/api/menu');
+      setDeleteItemData(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to delete item');
+      setDeleteItemData(null);
+    }
   };
 
   const executeDeleteCategory = async () => {
     if (!deleteCatId) return;
-    const token = localStorage.getItem('auth-token');
-    await fetch(`/api/categories/${deleteCatId}`, {
-      method: 'DELETE',
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    mutate('/api/categories');
-    mutate('/api/menu');
-    setActiveCategoryId('');
-    setDeleteCatId(null);
+    setActionError('');
+    try {
+      const res = await fetch(`/api/categories/${deleteCatId}`, {
+        method: 'DELETE',
+        credentials: 'include',
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || `Failed to delete category (${res.status})`);
+      }
+      mutate('/api/categories');
+      mutate('/api/menu');
+      setActiveCategoryId('');
+      setDeleteCatId(null);
+    } catch (err) {
+      setActionError(err instanceof Error ? err.message : 'Failed to delete category');
+      setDeleteCatId(null);
+    }
   };
 
   return (
     <div className="p-6 md:p-10 max-w-[1400px] mx-auto animate-fade-in-up">
+      {(menuError || catError) && (
+        <div className="mb-6 bg-red-50 border border-red-200 rounded-xl p-6 text-center">
+          <p className="text-red-700 font-medium mb-3">Failed to load menu data</p>
+          <button onClick={() => { refreshMenu(); refreshCats(); }} className="text-sm px-4 py-2 bg-red-100 text-red-700 rounded-lg font-medium hover:bg-red-200 transition-colors">Retry</button>
+        </div>
+      )}
       <header className="flex flex-col xl:flex-row xl:items-center justify-between mb-10 gap-6">
         <div>
           <h1 className="text-[32px] md:text-[40px] font-black text-stone-900 tracking-tighter">Menu Directory</h1>
@@ -367,6 +401,13 @@ export default function AdminMenuPage() {
         onConfirm={executeDeleteCategory}
         onCancel={() => setDeleteCatId(null)}
       />
+
+      {actionError && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-red-600 text-white px-6 py-3 rounded-xl shadow-lg z-50 text-sm font-medium">
+          {actionError}
+          <button onClick={() => setActionError('')} className="ml-3 underline">Dismiss</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -375,24 +416,34 @@ function CategoryFormDrawer({ category, onClose }: { category: Category | null; 
   const [name, setName] = useState(category?.name || '');
   const [sortOrder, setSortOrder] = useState(category?.sortOrder ?? 0);
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const token = localStorage.getItem('auth-token');
+    setFormError('');
+    try {
+      const url = category ? `/api/categories/${category.id}` : `/api/categories`;
+      const method = category ? 'PATCH' : 'POST';
 
-    const url = category ? `/api/categories/${category.id}` : `/api/categories`;
-    const method = category ? 'PATCH' : 'POST';
-
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({ name, sortOrder }),
-    });
-    mutate('/api/categories');
-    mutate('/api/menu');
-    setLoading(false);
-    onClose();
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ name, sortOrder }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || `Failed to save category (${res.status})`);
+      }
+      mutate('/api/categories');
+      mutate('/api/menu');
+      onClose();
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : 'Failed to save category');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -408,6 +459,7 @@ function CategoryFormDrawer({ category, onClose }: { category: Category | null; 
         </div>
 
         <form id="cat-form" onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-8 space-y-6 bg-white">
+          {formError && <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-3 font-medium">{formError}</div>}
           <div>
             <label htmlFor="cat-name" className="block text-[13px] font-bold text-stone-500 mb-2 uppercase tracking-widest">Display Name</label>
             <input
@@ -470,23 +522,33 @@ function ItemFormDrawer({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    const token = localStorage.getItem('auth-token');
-    const url = item ? `/api/menu/${item.id}` : '/api/menu';
-    const method = item ? 'PATCH' : 'POST';
+    setAlertMsg('');
+    try {
+      const url = item ? `/api/menu/${item.id}` : '/api/menu';
+      const method = item ? 'PATCH' : 'POST';
 
-    await fetch(url, {
-      method,
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-      body: JSON.stringify({
-        ...form,
-        price: Number(form.price),
-        imageUrl: form.imageUrl || undefined,
-        description: form.description || undefined,
-      }),
-    });
-    mutate('/api/menu');
-    setLoading(false);
-    onClose();
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({
+          ...form,
+          price: Number(form.price),
+          imageUrl: form.imageUrl || undefined,
+          description: form.description || undefined,
+        }),
+      });
+      if (!res.ok) {
+        const body = await res.json().catch(() => null);
+        throw new Error(body?.error?.message || `Failed to save item (${res.status})`);
+      }
+      mutate('/api/menu');
+      onClose();
+    } catch (err) {
+      setAlertMsg(err instanceof Error ? err.message : 'Failed to save item');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
