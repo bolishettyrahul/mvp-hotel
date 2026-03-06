@@ -38,7 +38,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // CORS: Set headers on all API responses
-  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || `http://localhost:${process.env.PORT || 3000}`;
+  const allowedOrigin = process.env.NEXT_PUBLIC_APP_URL || request.nextUrl.origin;
 
   // Handle preflight OPTIONS requests
   if (method === 'OPTIONS') {
