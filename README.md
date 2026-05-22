@@ -1,5 +1,13 @@
 # QR-Dine — Smart Restaurant Ordering System
 
+VERCEL-DEPLOYMENT:https://qr-dine-in-osv6.vercel.app/
+Admin:
+ usernmae:admin@qrdine.com
+Admin@123456
+
+kitchen:
+password:123456
+
 A QR-based dine-in ordering system built with **Next.js 14**, **Prisma**, **Supabase**, and **Tailwind CSS**.
 
 ## Features
